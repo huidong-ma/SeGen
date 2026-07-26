@@ -1,3 +1,4 @@
+import ast
 import os
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 os.environ.setdefault("PYTHONHASHSEED", "0")
@@ -46,9 +47,9 @@ def parseArgs(argv):
     args = parser.parse_args(argv)
     return args
 
-def decompress(args, temp_file, info, last):
+def decompress(args, temp_file, len_series, last):
     bs, ts = args.batchsize, args.timesteps
-    len_series, vocab_size = info[args.prefix], args.vocab_size
+    vocab_size = args.vocab_size
     iter_num = (len_series - ts) // bs
 
     series_2d = np.zeros((bs, iter_num), dtype=np.uint8).astype('int')
@@ -119,7 +120,8 @@ def main(args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     os.environ['PYTHONHASHSEED'] = str(args.seed)
-    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpu
+    # Preserve a scheduler or caller supplied device mask.
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", args.gpu)
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
@@ -138,8 +140,11 @@ def main(args):
         shutil.rmtree(args.tempdir)
     os.mkdir(args.tempdir)
     temp_file = args.tempdir + '/compressed_temp_file'
-    params = eval(open('params_' + args.prefix, 'r').read())
+    with open('params_' + args.prefix, 'r') as f:
+        params = ast.literal_eval(f.read())
 
+    len_series = params['length']
+    suffix = params.get('suffix', '')
     f = open(args.input, 'rb')
     for i in range(args.batchsize):
         f_out = open(temp_file + '.' + str(i), 'wb')
@@ -155,11 +160,11 @@ def main(args):
     f_out.close()
     f.close()
 
-    if (params[args.prefix] - args.timesteps) % args.batchsize == 0:
-        decompress(args, temp_file, params, 0)
+    if (len_series - args.timesteps) % args.batchsize == 0:
+        decompress(args, temp_file, len_series, 0)
     else:
-        last_length = (params[args.prefix] - args.timesteps) % args.batchsize + args.timesteps
-        decompress(args, temp_file, params, last_length)
+        last_length = (len_series - args.timesteps) % args.batchsize + args.timesteps
+        decompress(args, temp_file, len_series, last_length)
     shutil.rmtree(args.tempdir)
 
     # Reconstruction
@@ -169,7 +174,7 @@ def main(args):
     f.close()
 
     re_start = time.time()
-    reconstructed_series  = recover_data(args.K, args.S, params['id2char_dict'], series, params['Write-Chars'])
+    reconstructed_series = recover_data(args.K, args.S, series, suffix)
     with open(args.output, "w") as file_w:
         file_w.write(reconstructed_series)
     file_w.close()

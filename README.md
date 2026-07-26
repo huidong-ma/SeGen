@@ -1,11 +1,11 @@
 <div align="center">
-<h1>Secure Genome Sharing via Masking-Enhanced Neural Lossless Compression</h1>
+<h1>SeGen: Neural Lossless Genomic Compression with Sensitive-Region Protection</h1>
 </div>
 
 ## 📄 Introduction
-SeGen is a state-of-the-art framework designed for secure genomic data storage and sharing. It addresses the critical dilemma between strict privacy protection and high compression efficiency. Traditional "Encryption before Compression" pipelines often destroy the intrinsic redundancy of GD and incur prohibitive computational costs. 
+SeGen is a learning-based framework for lossless genomic compression with selective sensitive-region protection. It is designed for deployments where a data holder may outsource compression to an untrusted service without exposing dictionary-defined sensitive genomic content. Rather than encrypting the entire sequence before compression, SeGen uses a selective masking and compression workflow: the data holder identifies sensitive regions, masks only those bases, protects the location metadata and recovery key, and then compresses the masked sequence.
 
-To overcome this, SeGen introduces a novel **"Filtering Masking + Compression"** paradigm. By isolating the sensitive sequences (e.g., STRs, DRSs) and applying lightweight masking that maps back to the `{A, C, G, T}` alphabet, SeGen preserves the macro-redundancy of the genome. This allows the built-in Genomic Compression Neural Network (GCNN) to fully capture data dependencies, achieving extreme compression without sacrificing privacy.
+The masking operation preserves sequence length and the four-symbol DNA alphabet `{A, C, G, T}`, so the protected sequence remains compatible with DNA grouping, GCNN probability prediction, and arithmetic coding. An authorized recipient verifies the archive, recovers the sensitive-region bitmap, and inversely masks the sequence to reconstruct the original DNA exactly.
 
 <div align="center">
   <picture>
@@ -15,10 +15,11 @@ To overcome this, SeGen introduces a novel **"Filtering Masking + Compression"**
   <b>Framework of proposed method.</b>
 </div>
 
-SeGen provides the following key features:
-* 🔒 **Robust Data Privacy:** Accurately filters and masks only the highly sensitive strings (approx. 11.3% of the human genome) via Parallel Sensitive Sequence Masking (PSSM), ensuring computational infeasibility for unauthorized decryption.
-* 📉 **Superior Compression Ratio:** Outperforms 19 state-of-the-art conventional and learning-based compressors by effectively exploiting local and global redundancies via custom Deep Mixers.
-* 🚀 **Unmatched Efficiency:** Powered by the DNA Grouper and fully parallel filtering, SeGen achieves the fastest compression/decompression speeds among existing neural compressors while significantly minimizing peak memory usage.
+Key properties of the current implementation include:
+* Selective confidentiality for dictionary-defined sensitive regions, with AES-CTR masking over the four-base alphabet.
+* Encrypted interval metadata using AES-256-GCM, RSA-OAEP-SHA-256 key wrapping, and HMAC-SHA-256 archive authentication.
+* DNA Grouper and an online GCNN with arithmetic coding, allowing compression without access to the recovery key or sensitive-location metadata.
+* End-to-end lossless recovery after authenticated decompression.
 
 
 <div align="center">
@@ -28,20 +29,24 @@ SeGen provides the following key features:
   <br>
   <b>Overall performance of all method on real-world datasets.</b>
 </div>
-
----
-
 ## 💡 Usage
 
-### Setup
+### I. Setup
 
-1. Clone the repository and enter the project directory:
+1. Enter the project directory and use the included executables:
 
     ```bash
-    git clone https://github.com/huidong-ma/SeGen.git
-    cd SeGen
-    chmod +x ./segen
+    cd SeGen2
+    chmod +x ./segen PRSEC/prsec PRSEC/skmer
     ```
+
+   The repository already includes compiled `PRSEC/prsec` and `PRSEC/skmer` binaries, so no compilation is required for a normal run. Rebuild only after changing the PSSM source or when the binaries are unavailable or incompatible:
+
+    ```bash
+    make -C PRSEC
+    ```
+
+   Rebuilding requires a C++17 compiler, OpenMP, and OpenSSL development libraries.
 
 2. Create and activate a Conda environment:
 
@@ -50,12 +55,14 @@ SeGen provides the following key features:
    conda activate segen_env
    ```
 
-3. Install PyTorch.
+3. Install NumPy and PyTorch.
 
-   Please install a PyTorch version compatible with your CUDA driver and GPU. You can find installation commands from the official PyTorch previous versions page:
-   https://pytorch.org/get-started/previous-versions/.
+   Install a PyTorch version compatible with the CUDA driver and GPU used for compression and decompression. Consult the official PyTorch installation selector:
+   https://pytorch.org/get-started/previous-versions/
 
-4. Download the sensitive sequence database from [dataBaseSrf.tar.gz](https://drive.google.com/file/d/1ER9jGTI2UmBj_coyZ2Xm9TUsv7gb8Rkk/view?usp=drive_link) and extract it by:
+   For example, choose the proper command for your CUDA version from the PyTorch website and run it inside the `segen_env` environment.
+
+4. Download the sensitive sequence database ([`dataBaseSrf.tar.gz`](https://drive.google.com/file/d/1ER9jGTI2UmBj_coyZ2Xm9TUsv7gb8Rkk/view?usp=drive_link)) and extract it:
 
    ```bash
    tar -zxvf dataBaseSrf.tar.gz
@@ -63,19 +70,30 @@ SeGen provides the following key features:
 
    After extraction, make sure `dataBaseSrf.txt` exists in the SeGen project directory.
 
-### Compression and Decompression
+5. Generate the recipient RSA-3072 key pair on the first setup only. Skip this step when `recipient_private.pem` and `recipient_public.pem` already exist:
 
-1. Compress a raw genomic sequence file:
+   ```bash
+   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out recipient_private.pem
+   openssl pkey -in recipient_private.pem -pubout -out recipient_public.pem
+   chmod 600 recipient_private.pem
+   ```
 
-    ```bash
-    ./segen c <raw_file> <compressed_file>
-    ```
+   Neither key needs to be uploaded to the repository. Keep `recipient_private.pem` local and never commit or share it; only `recipient_public.pem` needs to be sent to the data holder when compression and recovery are performed by different parties. The public key is used for compression, and the private key is required for authenticated recovery. The RSA key pair can be reused; SeGen automatically generates a fresh random session key for every archive.
 
-2. Decompress a compressed file:
+### II. Compression and Decompression
+The raw input must be a single non-empty line containing only uppercase `A`, `C`, `G`, and `T`. FASTA headers, multiline FASTA files, whitespace, and ambiguous bases such as `N` are not accepted by the current PSSM executable.
 
-    ```bash
-    ./segen d <compressed_file> <decompressed_file>
-    ```
+Compress a raw genomic sequence file:
+
+```bash
+./segen c <raw_file> <compressed_file>
+```
+
+Decompress a compressed file:
+
+```bash
+./segen d <compressed_file> <decompressed_file>
+```
 
 **Example:**
 
@@ -84,11 +102,38 @@ SeGen provides the following key features:
 ./segen d test.cmp test.decmp
 ```
 
+To verify lossless reconstruction, compare the original file with the decompressed file:
+
+```bash
+cmp test test.decmp
+```
+
+If there is no output from `cmp`, the decompressed file is identical to the original file.
 
 ---
 
+### III. Command reference
+
+```bash
+./segen c <raw_file> <archive_file> [recipient_public.pem] [threads] [K] [S] [GPU] [vocab_size]
+./segen d <archive_file> <recovered_file> [recipient_private.pem] [threads] [K] [S] [GPU] [vocab_size]
+```
+
+Defaults are `threads=32`, `K=3`, `S=3`, `GPU=0`, and `vocab_size=64`. `S` must be no greater than `K`, and `vocab_size` must be at least `4^K`. Compression and decompression must use the same values. If the key path is omitted, the corresponding key beside `segen` is used.
+
+The standard commands are:
+
+```bash
+./segen c test test.cmp recipient_public.pem 32 3 3 0 64
+./segen d test.cmp test.decmp recipient_private.pem 32 3 3 0 64
+
+cmp test test.decmp
+```
+
+A wrong private key or modified protected archive causes recovery to fail without writing the recovered plaintext. The archive contains the compressed sequence, compression parameters, encrypted sensitive-region metadata, RSA-wrapped session key, and HMAC tag.
+
 ## 📦 Dataset
-The datasets used in the paper can be directly downloaded from [datasets.tar.gz](https://drive.google.com/file/d/1LShFvdYzGvXiFhzEU7dZUfEx-jPFSlDO/view?usp=drive_link) and extracted by executing `tar -zxvf datasets.tar.gz`. The detailed information is as follows.
+The datasets used in the paper can be directly downloaded from [datasets.tar.gz](https://drive.google.com/file/d/1LShFvdYzGvXiFhzEU7dZUfEx-jPFSlDO/view?usp=drive_link) and extracted by executing `tar -xzf datasets.tar.gz`. The detailed information is as follows.
 | **Name** | **Size (B)** | **Entropy** | **Description** |
 | :---: | :---: | :---: | :---: |
 | **AeCa** | 1,591,049 | 1.987 | A medium-sized aeropyrum camini dataset |
@@ -107,6 +152,13 @@ The datasets used in the paper can be directly downloaded from [datasets.tar.gz]
 | **AnCa** | 142,189,675 | 1.968 | One genome dataset of unknown species |
 | **GaGa** | 148,532,294 | 1.970 | A large-scale chromosome-2 of the gallus gallus |
 | **HoSa** | 189,752,667 | 1.960 | A large-scale human genome dataset |
+
+
+---
+
+## 🔥 Change Logs
+- *2025.07.30*: Fixed several bugs. SeGen is now more user-friendly. 
+- *2025.05.20*: Initial bug fixes and improvements.
 
 ---
 

@@ -1,3 +1,4 @@
+import ast
 import os
 os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 os.environ.setdefault("PYTHONHASHSEED", "0")
@@ -115,7 +116,8 @@ def main(args):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     os.environ['PYTHONHASHSEED'] = str(args.seed)
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    # Preserve a scheduler or caller supplied device mask.
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", args.gpu)
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
@@ -136,9 +138,15 @@ def main(args):
 
     series = np.load(args.input)
 
-    params = eval(open('params_'+args.prefix, 'r').read())
+    with open('params_' + args.prefix, 'r') as f:
+        params = ast.literal_eval(f.read())
 
-    params[args.prefix] = len(series)
+    # skmer temporarily emits full k-mer dictionaries. The archive format uses
+    # a fixed A=0, C=1, G=2, T=3 mapping, so only reconstruction state remains.
+    params = {
+        'length': len(series),
+        'suffix': params.get('Write-Chars', ''),
+    }
     with open('params_'+args.prefix, 'w') as f:
         f.write(str(params))
     f.close()
@@ -180,8 +188,8 @@ def main(args):
     t2 = time.time()
     f1_size, f2_size = os.stat(args.input).st_size, os.stat(args.output).st_size
     # logging.info('Compressed File Size: {} Bytes'.format(round(f2_size, 5)))
-    logging.info('Compression Ratio: {}'.format(round(f2_size / f1_size * 8, 5)))
-    logging.info('Compression Time: {} secs'.format(round(t2 - t1, 5)))
+    # logging.info('Compression Ratio: {}'.format(round(f2_size / f1_size * 8, 5)))
+    # logging.info('Compression Time: {} secs'.format(round(t2 - t1, 5)))
     # logging.info('Peak GPU memory usage: {} KBs'.format(torch.cuda.max_memory_allocated() // 1024))
     logging.info(
         'The params are:\nbatchsize\tlr\thidden_dim\tvocab_dim\tffn_dim\tlayers\ttimesteps\tvocab_size\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}'.format(

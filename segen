@@ -1,78 +1,110 @@
-#!/bin/bash
-# Date: 07/05/2026
-# USAGE: ./segen [mode(c/d)] [input_file] [output_file]
+#!/usr/bin/env bash
+set -euo pipefail
 
+usage() {
+    cat <<'EOF'
+Usage:
+  ./segen c <raw_file> <archive_file> [recipient_public.pem] [threads] [K] [S] [GPU] [vocab_size]
+  ./segen d <archive_file> <recovered_file> [recipient_private.pem] [threads] [K] [S] [GPU] [vocab_size]
+
+For one-to-one testing, omitted key paths default to recipient_public.pem and
+recipient_private.pem beside this script. A numeric third optional argument is
+treated as the thread count.
+EOF
+}
+
+[[ $# -ge 3 ]] || { usage >&2; exit 2; }
 mode=$1
+segen_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+[[ -f "$2" ]] || { echo "Error: input file does not exist: $2" >&2; exit 1; }
 input_file=$(realpath "$2")
-output_file=$(realpath "$3")
+output_file=$(realpath -m "$3")
 
-# === default params ===
-param_names=(threads K S GPU)
-default_values=(32 3 3 0)
-
-for i in "${!param_names[@]}"; do
-    param_name="${param_names[$i]}"
-    param_index=$((i + 4))
-    eval "$param_name=\${$param_index:-${default_values[$i]}}"
-    echo "$param_name value: ${!param_name}"
-done
-
-segen_fp=$(dirname "$(realpath "$0")")
-segen=$segen_fp"/segen"
-prsec=$segen_fp"/PRSEC/prsec"
-skmer=$segen_fp"/PRSEC/skmer"
-chmod 777 ${segen} ${prsec} ${skmer}
-
-if [ ! -f "$segen_fp/dataBaseSrf.txt" ]; then
-    echo "Error: File dataBaseSrf.txt dosen't exist!"
-    exit 1
+if [[ ${4:-} =~ ^[0-9]+$ || -z ${4:-} ]]; then
+    if [[ "$mode" == "c" ]]; then
+        key_file="$segen_dir/recipient_public.pem"
+    else
+        key_file="$segen_dir/recipient_private.pem"
+    fi
+    parameter_index=4
+else
+    key_file=$4
+    parameter_index=5
 fi
+[[ -f "$key_file" ]] || { echo "Error: key file does not exist: $key_file" >&2; exit 1; }
+key_file=$(realpath "$key_file")
+threads=${!parameter_index:-32}
+K_index=$((parameter_index + 1))
+S_index=$((parameter_index + 2))
+GPU_index=$((parameter_index + 3))
+VOCAB_index=$((parameter_index + 4))
+K=${!K_index:-3}
+S=${!S_index:-3}
+GPU=${!GPU_index:-0}
+[[ "$threads" =~ ^[1-9][0-9]*$ ]] || { echo "Error: threads must be a positive integer." >&2; exit 2; }
+[[ "$K" =~ ^[1-4]$ && "$S" =~ ^[1-4]$ && "$GPU" =~ ^[0-9]+$ ]] || {
+    echo "Error: K and S must be in 1..4, and GPU must be a non-negative integer." >&2
+    exit 2
+}
+(( S <= K )) || { echo "Error: S must not be greater than K." >&2; exit 2; }
+MIN_VOCAB_SIZE=$((4 ** K))
+VOCAB_SIZE=${!VOCAB_index:-$MIN_VOCAB_SIZE}
+[[ "$VOCAB_SIZE" =~ ^[1-9][0-9]*$ ]] || {
+    echo "Error: vocab_size must be a positive integer." >&2
+    exit 2
+}
+(( VOCAB_SIZE >= MIN_VOCAB_SIZE )) || {
+    echo "Error: vocab_size must be at least 4^K ($MIN_VOCAB_SIZE)." >&2
+    exit 2
+}
 
-file_name=$(basename ${input_file})
-echo "Input file: $input_name"
+prsec="$segen_dir/PRSEC/prsec"
+skmer="$segen_dir/PRSEC/skmer"
+[[ -x "$prsec" && -x "$skmer" ]] || { echo "Error: build PRSEC/prsec and provide PRSEC/skmer." >&2; exit 1; }
+[[ -f "$segen_dir/dataBaseSrf.txt" ]] || { echo "Error: dataBaseSrf.txt does not exist." >&2; exit 1; }
+cd "$segen_dir"
 
-cd $segen_fp
-cp $input_file .
+work_dir=$(mktemp -d "$segen_dir/.segen.XXXXXX")
+trap 'rm -rf "$work_dir"' EXIT
+payload_dir="$work_dir/payload"
 
-case "$1" in
+case "$mode" in
     c)
-        echo "===== Start Compressing ====="
-        echo "=== 1. Encrypt... ==="
-        $prsec -c ${threads} ${file_name}
-
-        cd ${file_name}.out
-        echo "=== 2. SK-mer accelation... ==="
-        $skmer encry.data ${K} ${S} ${GPU}
-
-        echo "=== 3. Compression... ==="
-        python ${segen_fp}/compress.py encry.data_${K}_${S}.npy ${file_name}.compressed --prefix encry.data_${K}_${S}
-        rm -rf encry.data
-        rm -rf encry.data_${K}_${S}.npy
-
-        cd ${segen_fp}
-        tar -cvf $output_file $file_name.out
-        rm -rf $file_name.out
-        echo "===== Finish Compression ====="
+        mkdir "$payload_dir"
+        "$prsec" -c "$threads" "$input_file" "$key_file" "$payload_dir"
+        (
+            cd "$payload_dir"
+            "$skmer" encry.data "$K" "$S" "$GPU"
+            python "$segen_dir/compress.py" "encry.data_${K}_${S}.npy" sequence.compressed \
+                --prefix "encry.data_${K}_${S}" --gpu "$GPU" --vocab_size "$VOCAB_SIZE"
+            mv "params_encry.data_${K}_${S}" compression.params
+            rm -f encry.data "encry.data_${K}_${S}.npy"
+        )
+        # Use one 512-byte tar record so metadata savings are reflected in the archive size.
+        tar --blocking-factor=1 -C "$work_dir" -cf "$output_file" payload
+        echo "Created authenticated SeGen archive: $output_file"
         ;;
     d)
-        echo "===== Start Decompressing ====="
-        folder_name=$(tar -tf "$file_name" | head -1 | cut -d/ -f1)
-
-        tar -xvf $file_name 
-        base_name=${folder_name%.out}
-        cd $folder_name
-
-        echo "=== 1. Decompression... ==="
-        python ${segen_fp}/decompress.py ${base_name}.compressed encry.data --prefix encry.data_${K}_${S}
-        cd ${segen_fp}
-
-        echo "=== 2. Decrypt... ==="
-        $prsec -d ${threads} ${folder_name}
-        mv $base_name.decry $output_file
-        rm -rf $folder_name
+        expected_members=$'payload/\npayload/auth.tag\npayload/compression.params\npayload/metadata.bin\npayload/sequence.compressed\npayload/wrapped_key.bin'
+        members=$(tar -tf "$input_file" | LC_ALL=C sort)
+        [[ "$members" == "$expected_members" ]] || {
+            echo "Error: archive has an unexpected layout." >&2
+            exit 1
+        }
+        tar -C "$work_dir" -xf "$input_file"
+        (
+            cd "$payload_dir"
+            mv compression.params "params_encry.data_${K}_${S}"
+            python "$segen_dir/decompress.py" sequence.compressed encry.data \
+                --prefix "encry.data_${K}_${S}" --gpu "$GPU" \
+                --K "$K" --S "$S" --vocab_size "$VOCAB_SIZE"
+        )
+        "$prsec" -d "$threads" "$payload_dir/encry.data" "$payload_dir/metadata.bin" \
+            "$payload_dir/wrapped_key.bin" "$payload_dir/auth.tag" "$key_file" "$output_file"
+        echo "Recovered authenticated sequence: $output_file"
         ;;
     *)
-        echo "Error: only support "c" (compression) or "d" decompression" >&2
-        exit 1
+        usage >&2
+        exit 2
         ;;
 esac

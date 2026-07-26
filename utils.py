@@ -95,26 +95,31 @@ def encode_array(arr):
 
     return encoded
 
-def recover_data(k, w, id2char_dict, series, additional_str):
-    # 用于解压缩恢复K-Mer编码
-    if (k == w):
-        res = [id2char_dict[str(s)] for s in series]
-        merged_string = ''.join(res)
-        if len(additional_str) > 0:  # k - w 是交叉重叠的部分
-            merged_string = merged_string + additional_str
-        return merged_string
-    else:
+def fixed_id2kmer(k):
+    """Build the canonical base-4 mapping A=0, C=1, G=2, T=3."""
+    alphabet = "ACGT"
+    mapping = []
+    for value in range(4 ** k):
+        digits = ["A"] * k
+        current = value
+        for index in range(k - 1, -1, -1):
+            current, remainder = divmod(current, 4)
+            digits[index] = alphabet[remainder]
+        mapping.append("".join(digits))
+    return mapping
 
-        res = [0] * len(series)
-        #res = [id2char_dict[str(s)] for s in series]
-        i = 0
-        while (i != len(res)):
-            if (i == 0):
-                res[i] = id2char_dict[str(series[i])]
-            else:
-                res[i] = id2char_dict[str(series[i])][k-w:]
-            i = i + 1
-        merged_string = ''.join(res)
-        if len(additional_str) > 0:  # k - w 是交叉重叠的部分
-            merged_string = merged_string + additional_str
-        return merged_string
+
+def recover_data(k, w, series, additional_str):
+    """Recover DNA using the fixed base-4 k-mer mapping."""
+    id2kmer = fixed_id2kmer(k)
+    values = [int(value) for value in series]
+    if any(value < 0 or value >= len(id2kmer) for value in values):
+        raise ValueError("encoded k-mer ID is outside the canonical vocabulary")
+    if not values:
+        return additional_str
+    if k == w:
+        merged_string = "".join(id2kmer[value] for value in values)
+    else:
+        merged_string = id2kmer[values[0]]
+        merged_string += "".join(id2kmer[value][k-w:] for value in values[1:])
+    return merged_string + additional_str
