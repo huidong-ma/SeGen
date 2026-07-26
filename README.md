@@ -153,13 +153,6 @@ The datasets used in the paper can be directly downloaded from [datasets.tar.gz]
 | **GaGa** | 148,532,294 | 1.970 | A large-scale chromosome-2 of the gallus gallus |
 | **HoSa** | 189,752,667 | 1.960 | A large-scale human genome dataset |
 
-
----
-
-## 🔥 Change Logs
-- *2025.07.30*: Fixed several bugs. SeGen is now more user-friendly. 
-- *2025.05.20*: Initial bug fixes and improvements.
-
 ---
 
 ## 📖 Acknowledgment
