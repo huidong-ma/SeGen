@@ -36,7 +36,7 @@ Key properties of the current implementation include:
 1. Enter the project directory and use the included executables:
 
     ```bash
-    cd SeGen2
+    cd SeGen
     chmod +x ./segen PRSEC/prsec PRSEC/skmer
     ```
 
