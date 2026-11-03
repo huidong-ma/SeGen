@@ -1,5 +1,5 @@
 <div align="center">
-<h1>SeGen: Neural Lossless Genomic Compression with Sensitive-Region Protection</h1>
+<h1>Neural Lossless Genomic Compression with Sensitive-Region Protection</h1>
 </div>
 
 ## 📄 Introduction
