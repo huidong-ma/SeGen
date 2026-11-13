@@ -29,6 +29,7 @@ Key properties of the current implementation include:
   <br>
   <b>Overall performance of all method on real-world datasets.</b>
 </div>
+
 ## 💡 Usage
 
 ### I. Setup
@@ -158,3 +159,6 @@ The datasets used in the paper can be directly downloaded from [datasets.tar.gz]
 ## 📖 Acknowledgment
 The code is based on [PAC](https://github.com/mynotwo/Faster-and-Stronger-Lossless-Compression-with-Optimized-Autoregressive-Framework), [MSDZip](https://github.com/mhuidong/MSDZip), and [Reference-arithmetic-coding](https://github.com/nayuki/Reference-arithmetic-coding). Thanks for these great works!
 
+## ✉️ Contact
+Email: mahd@nbjl.nankai.edu.cn  
+Nankai-Baidu Joint Laboratory (NBJL)
