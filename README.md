@@ -63,7 +63,7 @@ Key properties of the current implementation include:
 
    For example, choose the proper command for your CUDA version from the PyTorch website and run it inside the `segen_env` environment.
 
-4. Download the sensitive sequence database ([`dataBaseSrf.tar.gz`](https://drive.google.com/file/d/1ER9jGTI2UmBj_coyZ2Xm9TUsv7gb8Rkk/view?usp=drive_link)) and extract it:
+4. Download the sensitive sequence database ([`dataBaseSrf.tar.gz`](https://huggingface.co/datasets/huidong-ma/BDMA-SeGen-Datasets)) and extract it:
 
    ```bash
    tar -zxvf dataBaseSrf.tar.gz
@@ -134,7 +134,7 @@ cmp test test.decmp
 A wrong private key or modified protected archive causes recovery to fail without writing the recovered plaintext. The archive contains the compressed sequence, compression parameters, encrypted sensitive-region metadata, RSA-wrapped session key, and HMAC tag.
 
 ## 📦 Dataset
-The datasets used in the paper can be directly downloaded from [datasets.tar.gz](https://drive.google.com/file/d/1LShFvdYzGvXiFhzEU7dZUfEx-jPFSlDO/view?usp=drive_link) and extracted by executing `tar -xzf datasets.tar.gz`. The detailed information is as follows.
+The datasets used in the paper can be directly downloaded from [datasets.tar.gz](https://huggingface.co/datasets/huidong-ma/BDMA-SeGen-Datasets) and extracted by executing `tar -xzf datasets.tar.gz`. The detailed information is as follows.
 | **Name** | **Size (B)** | **Entropy** | **Description** |
 | :---: | :---: | :---: | :---: |
 | **AeCa** | 1,591,049 | 1.987 | A medium-sized aeropyrum camini dataset |
